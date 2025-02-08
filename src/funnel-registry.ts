@@ -1,74 +1,67 @@
 import { Funnel } from "@florianionescu/funnel-js"
-import Collection from "@florianionescu/mobx-collection"
 import { ObservableSet } from "mobx"
-import { v7 } from "uuid"
+import { ReferenceMapper } from "./reference-mapper"
 
-function handleAttribute(value: unknown) {
-  if (value !== null) {
-    console.log(typeof value)
-  }
-
-  switch (typeof value) {
-    case "string":
-    case "number":
-    case "boolean":
-    case "bigint":
-      return value.toString()
-    case "object":
-      if (value === null) {
-        return "NULL"
-      } else if (Array.isArray(value)) {
-        // handle array
-      } else {
-        // handle object
-      }
-      break
-    case "undefined":
-      return ""
-    case "function":
-      return value.toString()
-    case "symbol":
-      throw Error(`Tried to handle symbol attribute`)
-    default:
-      throw Error(`Unexpected type ${typeof value}`)
-  }
+type Filter<T> = {
+  predicate: (value: T, props: boolean[]) => boolean
+  dependencies: ObservableSet<T>[]
 }
 
+// take in a funnel, return a de-duped predicate and dependencies
 export default class FunnelRegistry<T> {
-  collection: Collection<T> = new Collection()
-  sets: Map<string, ObservableSet<T>> = new Map()
+  mapper: ReferenceMapper = new ReferenceMapper()
+  filters: Map<string, Filter<T>> = new Map()
 
-  add(item: T) {
-    this.collection.add(item)
+  // make a funnel into a Filter
+  make(funnel: Funnel): Filter<T> {
+    const predicate = (item: T, props: boolean[]) => !!funnel.run([item]).length
+    const dependencies = []
+
+    return {
+      predicate,
+      dependencies,
+    }
   }
 
-  remove(item: T) {
-    this.collection.remove(item)
+  // first, register all funnels
+  register(funnel: Funnel) {
+    this.mapper.map(funnel)
   }
 
-  // maps funnels to keys that are the same for all funnels that are funtionally the same
-  key(funnel: Funnel) {
-    const attributes = {
-      name: funnel.constructor.name,
+  build() {
+    // take all funnel references
+    const references = this.mapper.references
+      .b()
+      .filter((r) => r.value instanceof Funnel)
+
+    // prepare empty filters for each of them
+    references.forEach((r) => {
+      if (this.filters.get(r.hash)) return
+
+      this.filters.set(r.hash, {
+        predicate: () => false,
+        dependencies: [],
+      })
+    })
+
+    // calculate their dependencies and make their predicates
+    references.forEach((r) => {
+      if (this.filters.get(r.hash)) return
+
+      this.make(r.value as Funnel)
+    })
+
+    // return them to be thrown into the collection
+    return [...this.filters.values()]
+  }
+
+  get(funnel: Funnel): Filter<T> {
+    const r = this.mapper.map(funnel)
+    const filter = this.filters.get(r.hash)
+    if (!filter) {
+      throw Error("Tried to get Filter for a Funnel that isn't registered.")
     }
 
-    for (const key of Object.keys(funnel)) {
-      console.log(key, funnel[key], handleAttribute(funnel[key]))
-      attributes[key] = handleAttribute(funnel[key])
-    }
-
-    return JSON.stringify(attributes)
-  }
-
-  get(funnel: Funnel): ObservableSet<T> {
-    const key = this.key(funnel)
-
-    const existing = this.sets.get(key)
-    if (existing) return existing
-
-    const set = this.collection.filter((item: T) => !!funnel.run([item]).length)
-    this.sets.set(key, set)
-
-    return set
+    return filter
   }
 }

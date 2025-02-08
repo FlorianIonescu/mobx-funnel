@@ -2,6 +2,15 @@ import { v7 } from "uuid"
 import BidirectionalMap from "./bidirectional-map"
 import hash from "./utils/hash"
 
+function valueToUsable(value: any) {
+  if (value instanceof Reference) {
+    value = `###HASH###${value.hash}`
+  } else if (Array.isArray(value)) {
+    value = value.map((a) => valueToUsable(a))
+  }
+  return value
+}
+
 export class Reference {
   id: string
   type: string
@@ -20,7 +29,18 @@ export class Reference {
     if (typeof this.value === "object") {
       this.type = "Object"
       this.name = this.value.constructor.name
-      this.hash = hash(JSON.stringify(this.attr))
+
+      // hash should be based on child hashes, not id or anything
+      const comparison = Object.keys(this.attr).reduce((prev, key) => {
+        let value = this.attr[key]
+
+        return {
+          ...prev,
+          [key]: valueToUsable(value),
+        }
+      }, {})
+
+      this.hash = hash(JSON.stringify(comparison))
     } else {
       const _hash = hash(this.value.toString())
       if (this.value.name) {
@@ -63,13 +83,13 @@ export class ReferenceMapper {
                 element !== null &&
                 (typeof element === "object" || typeof element === "function")
               ) {
-                return this.map(element).id
+                return this.map(element)
               }
               return element
             })
           } else {
             // For non-array objects/functions, replace with reference
-            ref.attr[key] = this.map(item).id
+            ref.attr[key] = this.map(item)
           }
         } else {
           // For primitives, keep original value
