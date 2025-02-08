@@ -3,8 +3,15 @@ import FunnelRegistry from "./funnel-registry"
 import { All, ByType } from "@florianionescu/funnel-js"
 import { v7 } from "uuid"
 
-class Dummy {}
-class Dummy2 {}
+class Example {}
+class Dummy extends Example {
+  value = 5
+  constructor() {
+    super()
+    this.value = 7
+  }
+}
+class Dummy2 extends Example {}
 
 test("Funnel registry works in the simple case", () => {
   const registry = new FunnelRegistry()
@@ -64,11 +71,22 @@ function replaceRefsWithIds(objects: object[]): void {
 }
 
 test.only("Funnel registry works for nested funnels", () => {
-  const registry = new FunnelRegistry()
+  // map the funnels to collection filters
 
-  const ree = new ByType(Dummy)
-  const a = new All(new ByType(Dummy), new ByType(Dummy), ree)
+  const registry = new FunnelRegistry<Example>()
+  registry.add(new Dummy())
+  registry.add(new Dummy())
+  registry.add(new Dummy2())
+  registry.add(new Dummy2())
+  registry.add(new Dummy2())
 
-  const objects = normalize([a, ree])
-  console.log(objects)
+  const query = new ByType(Dummy)
+  const query2 = new ByType(Dummy2)
+
+  const set = registry.get(query)
+  const set2 = registry.get(query2)
+
+  console.log(set === set2)
+  console.log([...set])
+  console.log([...set2])
 })
